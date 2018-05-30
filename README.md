@@ -1,2 +1,2 @@
-# tcp-wvcc
-Kernel module for WVCC
+# tcp-wdctcp
+Kernel module for Weighted DCTCP

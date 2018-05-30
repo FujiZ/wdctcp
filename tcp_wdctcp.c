@@ -47,7 +47,8 @@
 
 #define DCTCP_MAX_ALPHA	1024U
 
-struct dctcp {
+struct wdctcp {
+	/* dctcp related params */
 	u32 acked_bytes_ecn;
 	u32 acked_bytes_total;
 	u32 prior_snd_una;
@@ -56,6 +57,10 @@ struct dctcp {
 	u32 next_seq;
 	u32 ce_state;
 	u32 delayed_ack_reserved;
+	/* pointer to wdctcp_obj containing the weight */
+	struct wdctcp_obj *obj;
+	/* counter for weighted increase */
+	u32 weight_acked_cnt;
 };
 
 static unsigned int dctcp_shift_g __read_mostly = 4; /* g = 1/2^4 */
@@ -68,12 +73,19 @@ MODULE_PARM_DESC(dctcp_alpha_on_init, "parameter for initial alpha value");
 
 static unsigned int dctcp_clamp_alpha_on_loss __read_mostly;
 module_param(dctcp_clamp_alpha_on_loss, uint, 0644);
-MODULE_PARM_DESC(dctcp_clamp_alpha_on_loss,
-		 "parameter for clamping alpha on loss");
+MODULE_PARM_DESC(dctcp_clamp_alpha_on_loss, "parameter for clamping alpha on loss");
 
-static struct tcp_congestion_ops dctcp_reno;
+static unsigned int wdctcp_precision __read_mostly = 10000;
+module_param(wdctcp_precision, uint, 0444);	/* read only */
+MODULE_PARM_DESC(wdctcp_precision, "parameter for fix point precision");
 
-static void dctcp_reset(const struct tcp_sock *tp, struct dctcp *ca)
+static unsigned int wdctcp_weight_on_init __read_mostly = 10000;
+module_param(wdctcp_weight_on_init, uint, 0644);
+MODULE_PARM_DESC(wdctcp_weight_on_init, "parameter for initial weight value");
+
+static struct tcp_congestion_ops wdctcp_reno;
+
+static void wdctcp_reset(const struct tcp_sock *tp, struct wdctcp *ca)
 {
 	ca->next_seq = tp->snd_nxt;
 
@@ -81,14 +93,14 @@ static void dctcp_reset(const struct tcp_sock *tp, struct dctcp *ca)
 	ca->acked_bytes_total = 0;
 }
 
-static void dctcp_init(struct sock *sk)
+static void wdctcp_init(struct sock *sk)
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
 
 	if ((tp->ecn_flags & TCP_ECN_OK) ||
 	    (sk->sk_state == TCP_LISTEN ||
 	     sk->sk_state == TCP_CLOSE)) {
-		struct dctcp *ca = inet_csk_ca(sk);
+		struct wdctcp *ca = inet_csk_ca(sk);
 
 		ca->prior_snd_una = tp->snd_una;
 		ca->prior_rcv_nxt = tp->rcv_nxt;
@@ -98,7 +110,7 @@ static void dctcp_init(struct sock *sk)
 		ca->delayed_ack_reserved = 0;
 		ca->ce_state = 0;
 
-		dctcp_reset(tp, ca);
+		wdctcp_reset(tp, ca);
 		return;
 	}
 
@@ -109,9 +121,14 @@ static void dctcp_init(struct sock *sk)
 	INET_ECN_dontxmit(sk);
 }
 
+static void wdctcp_release(struct sock *sk)
+{
+	// TODO put kobject
+}
+
 static u32 dctcp_ssthresh(struct sock *sk)
 {
-	const struct dctcp *ca = inet_csk_ca(sk);
+	const struct wdctcp *ca = inet_csk_ca(sk);
 	struct tcp_sock *tp = tcp_sk(sk);
 
 	return max(tp->snd_cwnd - ((tp->snd_cwnd * ca->dctcp_alpha) >> 11U), 2U);
@@ -125,7 +142,7 @@ static u32 dctcp_ssthresh(struct sock *sk)
 
 static void dctcp_ce_state_0_to_1(struct sock *sk)
 {
-	struct dctcp *ca = inet_csk_ca(sk);
+	struct wdctcp *ca = inet_csk_ca(sk);
 	struct tcp_sock *tp = tcp_sk(sk);
 
 	/* State has changed from CE=0 to CE=1 and delayed
@@ -155,7 +172,7 @@ static void dctcp_ce_state_0_to_1(struct sock *sk)
 
 static void dctcp_ce_state_1_to_0(struct sock *sk)
 {
-	struct dctcp *ca = inet_csk_ca(sk);
+	struct wdctcp *ca = inet_csk_ca(sk);
 	struct tcp_sock *tp = tcp_sk(sk);
 
 	/* State has changed from CE=1 to CE=0 and delayed
@@ -186,7 +203,7 @@ static void dctcp_ce_state_1_to_0(struct sock *sk)
 static void dctcp_update_alpha(struct sock *sk, u32 flags)
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
-	struct dctcp *ca = inet_csk_ca(sk);
+	struct wdctcp *ca = inet_csk_ca(sk);
 	u32 acked_bytes = tp->snd_una - ca->prior_snd_una;
 
 	/* If ack did not advance snd_una, count dupack as MSS size.
@@ -225,7 +242,7 @@ static void dctcp_update_alpha(struct sock *sk, u32 flags)
 static void dctcp_state(struct sock *sk, u8 new_state)
 {
 	if (dctcp_clamp_alpha_on_loss && new_state == TCP_CA_Loss) {
-		struct dctcp *ca = inet_csk_ca(sk);
+		struct wdctcp *ca = inet_csk_ca(sk);
 
 		/* If this extension is enabled, we clamp dctcp_alpha to
 		 * max on packet loss; the motivation is that dctcp_alpha
@@ -241,7 +258,7 @@ static void dctcp_state(struct sock *sk, u8 new_state)
 
 static void dctcp_update_ack_reserved(struct sock *sk, enum tcp_ca_event ev)
 {
-	struct dctcp *ca = inet_csk_ca(sk);
+	struct wdctcp *ca = inet_csk_ca(sk);
 
 	switch (ev) {
 	case CA_EVENT_DELAYED_ACK:
@@ -277,9 +294,9 @@ static void dctcp_cwnd_event(struct sock *sk, enum tcp_ca_event ev)
 	}
 }
 
-static void dctcp_get_info(struct sock *sk, u32 ext, struct sk_buff *skb)
+static void wdctcp_get_info(struct sock *sk, u32 ext, struct sk_buff *skb)
 {
-	const struct dctcp *ca = inet_csk_ca(sk);
+	const struct wdctcp *ca = inet_csk_ca(sk);
 
 	/* Fill it also in case of VEGASINFO due to req struct limits.
 	 * We can still correctly retrieve it later.
@@ -301,44 +318,97 @@ static void dctcp_get_info(struct sock *sk, u32 ext, struct sk_buff *skb)
 	}
 }
 
-static struct tcp_congestion_ops dctcp __read_mostly = {
-	.init		= dctcp_init,
+/* In theory this is tp->snd_cwnd += 1 / tp->snd_cwnd (or alternative w),
+ * for every packet that was ACKed.
+ */
+static void wdctcp_cong_avoid_ai(struct sock *sk, u32 w, u32 acked)
+{
+	struct wdctcp *ca = inet_csk_ca(sk);
+	struct tcp_sock *tp = tcp_sk(sk);
+
+	/* If credits accumulated at a higher w, apply them gently now. */
+	if (tp->snd_cwnd_cnt >= w) {
+		tp->snd_cwnd_cnt = 0;
+		tp->snd_cwnd++;
+	}
+
+	/* Weighted increase snd_cwnd_cnt instead of adding acked directly. */
+	ca->weight_acked_cnt += ca->obj.weight * acked;
+	if (ca->weight_acked_cnt >= wdctcp_precision) {
+		u32 delta = ca->weight_acked_cnt / wdctcp_precision;
+
+		ca->weight_acked_cnt -= delta * wdctcp_precision;
+		tp->snd_cwnd_cnt += delta;
+	}
+
+	if (tp->snd_cwnd_cnt >= w) {
+		u32 delta = tp->snd_cwnd_cnt / w;
+
+		tp->snd_cwnd_cnt -= delta * w;
+		tp->snd_cwnd += delta;
+	}
+	tp->snd_cwnd = min(tp->snd_cwnd, tp->snd_cwnd_clamp);
+}
+
+/*
+ * Weighted DCTCP congestion control
+ */
+static void wdctcp_cong_avoid(struct sock *sk, u32 ack, u32 acked)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+
+	if (!tcp_is_cwnd_limited(sk))
+		return;
+
+	/* In "safe" area, increase. */
+	if (tp->snd_cwnd <= tp->snd_ssthresh) {
+		acked = tcp_slow_start(tp, acked);
+		if (!acked)
+			return;
+	}
+	/* In dangerous area, increase slowly. */
+	wdctcp_cong_avoid_ai(sk, tp->snd_cwnd, acked);
+}
+
+static struct tcp_congestion_ops wdctcp __read_mostly = {
+	.init		= wdctcp_init,
+	.release	= wdctcp_release,
 	.in_ack_event   = dctcp_update_alpha,
 	.cwnd_event	= dctcp_cwnd_event,
 	.ssthresh	= dctcp_ssthresh,
-	.cong_avoid	= tcp_reno_cong_avoid,
+	.cong_avoid	= wdctcp_cong_avoid,
 	.set_state	= dctcp_state,
 	.get_info	= dctcp_get_info,
 	.flags		= TCP_CONG_NEEDS_ECN,
 	.owner		= THIS_MODULE,
-	.name		= "dctcp",
+	.name		= "wdctcp",
 };
 
 static struct tcp_congestion_ops dctcp_reno __read_mostly = {
 	.ssthresh	= tcp_reno_ssthresh,
 	.cong_avoid	= tcp_reno_cong_avoid,
-	.get_info	= dctcp_get_info,
+	.get_info	= wdctcp_get_info,
 	.owner		= THIS_MODULE,
-	.name		= "dctcp-reno",
+	.name		= "wdctcp-reno",
 };
 
-static int __init dctcp_register(void)
+static int __init wdctcp_register(void)
 {
-	BUILD_BUG_ON(sizeof(struct dctcp) > ICSK_CA_PRIV_SIZE);
-	return tcp_register_congestion_control(&dctcp);
+	BUILD_BUG_ON(sizeof(struct wdctcp) > ICSK_CA_PRIV_SIZE);
+	// TODO create kset
+	return tcp_register_congestion_control(&wdctcp);
 }
 
-static void __exit dctcp_unregister(void)
+static void __exit wdctcp_unregister(void)
 {
-	tcp_unregister_congestion_control(&dctcp);
+	// TODO remove kset
+	tcp_unregister_congestion_control(&wdctcp);
 }
 
-module_init(dctcp_register);
-module_exit(dctcp_unregister);
+module_init(wdctcp_register);
+module_exit(wdctcp_unregister);
 
-MODULE_AUTHOR("Daniel Borkmann <dborkman@redhat.com>");
-MODULE_AUTHOR("Florian Westphal <fw@strlen.de>");
-MODULE_AUTHOR("Glenn Judd <glenn.judd@morganstanley.com>");
+MODULE_AUTHOR("FujiZ <i@fujiz.me>");
 
 MODULE_LICENSE("GPL v2");
-MODULE_DESCRIPTION("WVCC");
+MODULE_DESCRIPTION("Weighted DCTCP (WDCTCP)");

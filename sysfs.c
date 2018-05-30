@@ -13,7 +13,7 @@
 
 /*
  * This module shows how to create a kset in sysfs called
- * /sys/kernel/kset-example
+ * /sys/kernel/wdctcp
  * Then tree kobjects are created and assigned to this kset, "wvcc", "baz",
  * and "bar".  In those kobjects, attributes of the same name are also
  * created and if an integer is written to these files, it can be later
@@ -25,39 +25,40 @@
  * This is our "object" that we will create a few of and register them with
  * sysfs.
  */
-struct wvcc_obj {
+struct wdctcp_obj {
 	struct kobject kobj;
-	int weight;
+	// TODO change to uint
+	u32 weight;
 };
-#define to_wvcc_obj(x) container_of(x, struct wvcc_obj, kobj)
+#define to_wdctcp_obj(x) container_of(x, struct wdctcp_obj, kobj)
 
-/* a custom attribute that works just for a struct wvcc_obj. */
-struct wvcc_attribute {
+/* a custom attribute that works just for a struct wdctcp_obj. */
+struct wdctcp_attr {
 	struct attribute attr;
-	ssize_t (*show)(struct wvcc_obj *obj, struct wvcc_attribute *attr, char *buf);
-	ssize_t (*store)(struct wvcc_obj *obj, struct wvcc_attribute *attr,
+	ssize_t (*show)(struct wdctcp_obj *obj, struct wdctcp_attr *attr, char *buf);
+	ssize_t (*store)(struct wdctcp_obj *obj, struct wdctcp_attr *attr,
 			 const char *buf, size_t count);
 };
-#define to_wvcc_attr(x) container_of(x, struct wvcc_attribute, attr)
+#define to_wdctcp_attr(x) container_of(x, struct wdctcp_attr, attr)
 
 /*
  * The default show function that must be passed to sysfs.  This will be
  * called by sysfs for whenever a show function is called by the user on a
  * sysfs file associated with the kobjects we have registered.  We need to
- * transpose back from a "default" kobject to our custom struct wvcc_obj and
+ * transpose back from a "default" kobject to our custom struct wdctcp_obj and
  * then call the show function for that specific object.
  */
 static ssize_t wvcc_attr_show(struct kobject *kobj,
 			      struct attribute *attr,
 			      char *buf)
 {
-	struct wvcc_attribute *attribute = to_wvcc_attr(attr);
-	struct wvcc_obj *wvcc;
+	struct wdctcp_attr *attribute = to_wvcc_attr(attr);
+	struct wdctcp_obj *wvcc;
 
 	if (!attribute->show)
 		return -EIO;
 
-	wvcc = to_wvcc_obj(kobj);
+	wvcc = to_wdctcp_obj(kobj);
 	return attribute->show(wvcc, attribute, buf);
 }
 
@@ -69,13 +70,13 @@ static ssize_t wvcc_attr_store(struct kobject *kobj,
 			       struct attribute *attr,
 			       const char *buf, size_t len)
 {
-	struct wvcc_attribute *attribute = to_wvcc_attr(attr);
-	struct wvcc_obj *wvcc;
+	struct wdctcp_attr *attribute = to_wvcc_attr(attr);
+	struct wdctcp_obj *wvcc;
 
 	if (!attribute->store)
 		return -EIO;
 
-	wvcc = to_wvcc_obj(kobj);
+	wvcc = to_wdctcp_obj(kobj);
 	return attribute->store(wvcc, attribute, buf, len);
 }
 
@@ -94,33 +95,33 @@ static const struct sysfs_ops wvcc_sysfs_ops = {
  */
 static void wvcc_release(struct kobject *kobj)
 {
-	struct wvcc_obj *wvcc;
+	struct wdctcp_obj *wvcc;
 
-	wvcc = to_wvcc_obj(kobj);
+	wvcc = to_wdctcp_obj(kobj);
 	kfree(wvcc);
 }
 
 /*
  * The "weight" file where the .weight variable is read from and written to.
  */
-static ssize_t wvcc_weight_show(struct wvcc_obj *obj,
-				struct wvcc_attribute *attr,
+static ssize_t wvcc_weight_show(struct wdctcp_obj *obj,
+				struct wdctcp_attr *attr,
 				char *buf)
 {
-	return sprintf(buf, "%d\n", obj->weight);
+	return sprintf(buf, "%u\n", obj->weight);
 }
 
-static ssize_t wvcc_weight_store(struct wvcc_obj *obj,
-				 struct wvcc_attribute *attr,
+static ssize_t wvcc_weight_store(struct wdctcp_obj *obj,
+				 struct wdctcp_attr *attr,
 				 const char *buf, size_t count)
 {
 	/** TODO do santity check before assigning to weight */
-	sscanf(buf, "%d", &obj->weight);
+	sscanf(buf, "%u", &obj->weight);
 	return count;
 }
 
 /* Sysfs attributes cannot be world-writable. */
-static struct wvcc_attribute weight_attribute =
+static struct wdctcp_attr weight_attribute =
 	__ATTR(weight, 0664, wvcc_weight_show, wvcc_weight_store);
 
 /*
@@ -146,9 +147,9 @@ static struct kobj_type wvcc_ktype = {
 static struct kset *wvcc_kset;
 
 /** TODO export interface for wvcc_tcp to create/put kobj */
-static struct wvcc_obj *create_wvcc_obj(const char *name)
+static struct wdctcp_obj *create_wdctcp_obj(const char *name)
 {
-	struct wvcc_obj *wvcc;
+	struct wdctcp_obj *wvcc;
 	int retval;
 
 	/* allocate the memory for the whole object */
@@ -185,7 +186,10 @@ static struct wvcc_obj *create_wvcc_obj(const char *name)
 	return wvcc;
 }
 
-static void destroy_wvcc_obj(struct wvcc_obj *wvcc)
+// TODO create wdctcp_obj
+static struct wdctcp_obj *;
+
+static void destroy_wdctcp_obj(struct wdctcp_obj *wvcc)
 {
 	kobject_put(&wvcc->kobj);
 }
@@ -196,15 +200,15 @@ static int __init example_init(void)
 	 * Create a kset with the name of "wvcc",
 	 * located under /sys/kernel/
 	 */
-	wvcc_kset = kset_create_and_add("wvcc", NULL, kernel_kobj);
+	wvcc_kset = kset_create_and_add("wdctcp", NULL, kernel_kobj);
 	if (!wvcc_kset)
 		return -ENOMEM;
 
 	/*
 	 * Create three objects and register them with our kset
 	 */
-	wvcc_obj = create_wvcc_obj("wvcc");
-	if (!wvcc_obj)
+	wdctcp_obj = create_wdctcp_obj("foo");
+	if (!wdctcp_obj)
 		goto wvcc_error;
 
 	return 0;
@@ -216,7 +220,7 @@ wvcc_error:
 
 static void __exit example_exit(void)
 {
-	destroy_wvcc_obj(wvcc_obj);
+	destroy_wdctcp_obj(wdctcp_obj);
 	kset_unregister(wvcc_kset);
 }
 
