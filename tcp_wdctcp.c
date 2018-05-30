@@ -45,43 +45,9 @@
 #include <net/tcp.h>
 #include <linux/inet_diag.h>
 
+#include "wdctcp.h"
+
 #define DCTCP_MAX_ALPHA	1024U
-
-struct wdctcp {
-	/* dctcp related params */
-	u32 acked_bytes_ecn;
-	u32 acked_bytes_total;
-	u32 prior_snd_una;
-	u32 prior_rcv_nxt;
-	u32 dctcp_alpha;
-	u32 next_seq;
-	u32 ce_state;
-	u32 delayed_ack_reserved;
-	/* pointer to wdctcp_obj containing the weight */
-	struct wdctcp_obj *obj;
-	/* counter for weighted increase */
-	u32 weight_acked_cnt;
-};
-
-static unsigned int dctcp_shift_g __read_mostly = 4; /* g = 1/2^4 */
-module_param(dctcp_shift_g, uint, 0644);
-MODULE_PARM_DESC(dctcp_shift_g, "parameter g for updating dctcp_alpha");
-
-static unsigned int dctcp_alpha_on_init __read_mostly = DCTCP_MAX_ALPHA;
-module_param(dctcp_alpha_on_init, uint, 0644);
-MODULE_PARM_DESC(dctcp_alpha_on_init, "parameter for initial alpha value");
-
-static unsigned int dctcp_clamp_alpha_on_loss __read_mostly;
-module_param(dctcp_clamp_alpha_on_loss, uint, 0644);
-MODULE_PARM_DESC(dctcp_clamp_alpha_on_loss, "parameter for clamping alpha on loss");
-
-static unsigned int wdctcp_precision __read_mostly = 10000;
-module_param(wdctcp_precision, uint, 0444);	/* read only */
-MODULE_PARM_DESC(wdctcp_precision, "parameter for fix point precision");
-
-static unsigned int wdctcp_weight_on_init __read_mostly = 10000;
-module_param(wdctcp_weight_on_init, uint, 0644);
-MODULE_PARM_DESC(wdctcp_weight_on_init, "parameter for initial weight value");
 
 static struct tcp_congestion_ops wdctcp_reno;
 
@@ -111,13 +77,15 @@ static void wdctcp_init(struct sock *sk)
 		ca->ce_state = 0;
 
 		wdctcp_reset(tp, ca);
+		ca->obj = wdctcp_obj_create(sk);
+
 		return;
 	}
 
 	/* No ECN support? Fall back to Reno. Also need to clear
 	 * ECT from sk since it is set during 3WHS for DCTCP.
 	 */
-	inet_csk(sk)->icsk_ca_ops = &dctcp_reno;
+	inet_csk(sk)->icsk_ca_ops = &wdctcp_reno;
 	INET_ECN_dontxmit(sk);
 }
 
@@ -392,23 +360,17 @@ static struct tcp_congestion_ops dctcp_reno __read_mostly = {
 	.name		= "wdctcp-reno",
 };
 
-static int __init wdctcp_register(void)
+int wdctcp_tcp_init(void)
 {
 	BUILD_BUG_ON(sizeof(struct wdctcp) > ICSK_CA_PRIV_SIZE);
 	// TODO create kset
+	wdctcp_sysfs_init();
 	return tcp_register_congestion_control(&wdctcp);
 }
 
-static void __exit wdctcp_unregister(void)
+void wdctcp_tcp_exit(void)
 {
 	// TODO remove kset
+	wdctcp_sysfs_exit();
 	tcp_unregister_congestion_control(&wdctcp);
 }
-
-module_init(wdctcp_register);
-module_exit(wdctcp_unregister);
-
-MODULE_AUTHOR("FujiZ <i@fujiz.me>");
-
-MODULE_LICENSE("GPL v2");
-MODULE_DESCRIPTION("Weighted DCTCP (WDCTCP)");
