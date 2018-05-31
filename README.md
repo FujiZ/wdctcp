@@ -1,2 +1,2 @@
-# tcp-wdctcp
+# wdctcp
 Kernel module for Weighted DCTCP

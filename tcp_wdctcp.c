@@ -278,7 +278,7 @@ static void tcp_wdctcp_get_info(struct sock *sk, u32 ext, struct sk_buff *skb)
 		struct tcp_dctcp_info info;
 
 		memset(&info, 0, sizeof(info));
-		if (inet_csk(sk)->icsk_ca_ops != &dctcp_reno) {
+		if (inet_csk(sk)->icsk_ca_ops != &wdctcp_reno) {
 			info.dctcp_enabled = 1;
 			info.dctcp_ce_state = (u16) ca->ce_state;
 			info.dctcp_alpha = ca->dctcp_alpha;
@@ -305,7 +305,7 @@ static void tcp_wdctcp_cong_avoid_ai(struct sock *sk, u32 w, u32 acked)
 	}
 
 	/* Weighted increase snd_cwnd_cnt instead of adding acked directly. */
-	ca->weight_acked_cnt += ca->obj.weight * acked;
+	ca->weight_acked_cnt += ca->obj->weight * acked;
 	if (ca->weight_acked_cnt >= wdctcp_precision) {
 		u32 delta = ca->weight_acked_cnt / wdctcp_precision;
 
@@ -366,13 +366,13 @@ static struct tcp_congestion_ops wdctcp_reno __read_mostly = {
 	.name		= "wdctcp-reno",
 };
 
-int __init tcp_wdctcp_register(void)
+int tcp_wdctcp_register(void)
 {
-	BUILD_BUG_ON(sizeof(struct wdctcp) > ICSK_CA_PRIV_SIZE);
+	BUILD_BUG_ON(sizeof(struct tcp_wdctcp) > ICSK_CA_PRIV_SIZE);
 	return tcp_register_congestion_control(&tcp_wdctcp);
 }
 
-void __exit tcp_wdctcp_unregister(void)
+void tcp_wdctcp_unregister(void)
 {
 	tcp_unregister_congestion_control(&tcp_wdctcp);
 }

@@ -4,9 +4,10 @@
  * Released under the GPL version 2 only.
  *
  */
-#include <linux/string.h>
-#include <linux/slab.h>
 #include <linux/init.h>
+#include <linux/slab.h>
+#include <linux/socket.h>
+#include <linux/string.h>
 
 #include "wdctcp.h"
 
@@ -149,14 +150,14 @@ struct wdctcp_obj *wdctcp_obj_create(const struct sock *sk)
 	case AF_INET:
 		/* sk_daddr is of type __be32 */
 		retval = kobject_add(&object->kobj, NULL, "%pI4:%hu-%pI4:%hu",
-				     sk->sk_rcv_saddr, sk->sk_num,
-				     sk->sk_daddr, ntohs(sk->sk_dport));
+				     &sk->sk_rcv_saddr, sk->sk_num,
+				     &sk->sk_daddr, ntohs(sk->sk_dport));
 		break;
 	case AF_INET6:
 		/* sk_v6_daddr is passed by refrence */
 		retval = kobject_add(&object->kobj, NULL, "[%pI6]:%hu-[%pI6]:%hu",
-				     sk->sk_v6_rcv_saddr, sk->sk_num,
-				     sk->sk_v6_daddr, ntohs(sk->sk_dport));
+				     &sk->sk_v6_rcv_saddr, sk->sk_num,
+				     &sk->sk_v6_daddr, ntohs(sk->sk_dport));
 		break;
 	default:
 		/* neither ipv4 nor ipv6: not likely */
@@ -186,7 +187,7 @@ void wdctcp_obj_put(struct wdctcp_obj *obj)
 	kobject_put(&obj->kobj);
 }
 
-int __init wdctcp_sysfs_init(void)
+int wdctcp_sysfs_init(void)
 {
 	/*
 	 * Create a kset with the name of "wdctcp",
@@ -198,7 +199,7 @@ int __init wdctcp_sysfs_init(void)
 	return 0;
 }
 
-void __exit wdctcp_sysfs_exit(void)
+void wdctcp_sysfs_exit(void)
 {
 	kset_unregister(wdctcp_kset);
 }

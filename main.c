@@ -27,7 +27,6 @@ MODULE_PARM_DESC(wdctcp_weight_on_init, "parameter for initial weight value");
 
 static int __init wdctcp_init(void)
 {
-	BUILD_BUG_ON(sizeof(struct wdctcp) > ICSK_CA_PRIV_SIZE);
 	int err;
 
 	err = tcp_wdctcp_register();
