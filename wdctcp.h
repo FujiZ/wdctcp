@@ -16,7 +16,7 @@ struct wdctcp_obj {
 	u32 weight;
 };
 
-struct wdctcp {
+struct tcp_wdctcp {
 	/* dctcp related params */
 	u32 acked_bytes_ecn;
 	u32 acked_bytes_total;
@@ -47,13 +47,22 @@ struct wdctcp_attr {
 struct wdctcp_obj *wdctcp_obj_create(const struct sock *sk);
 void wdctcp_obj_put(struct wdctcp_obj *obj);
 
-int wdctcp_sysfs_init(void);
-void wdctcp_sysfs_exit(void);
+/* sysfs init&exit function */
+int wdctcp_sysfs_init(void) __init;
+void wdctcp_sysfs_exit(void) __exit;
 
+/* tcp congestion control init&exit function */
+int tcp_wdctcp_register(void) __init;
+void tcp_wdctcp_unregister(void) __exit;
+
+#define DCTCP_MAX_ALPHA	1024U
+
+/* DCTCP related module params */
 extern unsigned int dctcp_shift_g __read_mostly;
 extern unsigned int dctcp_alpha_on_init __read_mostly;
 extern unsigned int dctcp_clamp_alpha_on_loss __read_mostly;
 
+/* Weighted DCTCP related module params */
 extern unsigned int wdctcp_precision __read_mostly;
 extern unsigned int wdctcp_weight_on_init __read_mostly;
 
