@@ -145,7 +145,6 @@ struct wdctcp_obj *wdctcp_obj_create(const struct sock *sk)
 	 */
 	kobject_init(&object->kobj, &wdctcp_ktype);
 	/* get addr && port from sock */
-	// TODO we should check if this output-format is correct.
 	switch (sk->sk_family) {
 	case AF_INET:
 		/* sk_daddr is of type __be32 */
