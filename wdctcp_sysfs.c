@@ -155,7 +155,7 @@ struct wdctcp_obj *wdctcp_obj_create(const struct sock *sk)
 		break;
 	case AF_INET6:
 		/* sk_v6_daddr is passed by refrence */
-		retval = kobject_add(&object->kobj, NULL, "[%pI6]:%hu-[%pI6]:%hu",
+		retval = kobject_add(&object->kobj, NULL, "[%pI6c]:%hu-[%pI6c]:%hu",
 				     &sk->sk_v6_rcv_saddr, sk->sk_num,
 				     &sk->sk_v6_daddr, ntohs(sk->sk_dport));
 		break;
