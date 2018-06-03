@@ -366,7 +366,7 @@ static struct tcp_congestion_ops wdctcp_reno __read_mostly = {
 	.name		= "wdctcp-reno",
 };
 
-int tcp_wdctcp_register(void)
+int __init tcp_wdctcp_register(void)
 {
 	BUILD_BUG_ON(sizeof(struct tcp_wdctcp) > ICSK_CA_PRIV_SIZE);
 	return tcp_register_congestion_control(&tcp_wdctcp);

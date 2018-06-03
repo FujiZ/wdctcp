@@ -186,7 +186,7 @@ void wdctcp_obj_put(struct wdctcp_obj *obj)
 	kobject_put(&obj->kobj);
 }
 
-int wdctcp_sysfs_init(void)
+int __init wdctcp_sysfs_init(void)
 {
 	/*
 	 * Create a kset with the name of "wdctcp",

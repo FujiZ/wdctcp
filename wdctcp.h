@@ -50,11 +50,11 @@ struct wdctcp_obj *wdctcp_obj_create(const struct sock *sk);
 void wdctcp_obj_put(struct wdctcp_obj *obj);
 
 /* sysfs init&exit function */
-int wdctcp_sysfs_init(void);
+int wdctcp_sysfs_init(void) __init;
 void wdctcp_sysfs_exit(void);
 
 /* tcp congestion control init&exit function */
-int tcp_wdctcp_register(void);
+int tcp_wdctcp_register(void) __init;
 void tcp_wdctcp_unregister(void);
 
 #define DCTCP_MAX_ALPHA	1024U
