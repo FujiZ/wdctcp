@@ -76,6 +76,7 @@ static void tcp_wdctcp_init(struct sock *sk)
 		ca->dctcp_alpha = min(dctcp_alpha_on_init, DCTCP_MAX_ALPHA);
 
 		ca->delayed_ack_reserved = 0;
+		ca->loss_cwnd = 0;
 		ca->ce_state = 0;
 
 		tcp_wdctcp_reset(tp, ca);
@@ -100,9 +101,10 @@ static void tcp_wdctcp_release(struct sock *sk)
 
 static u32 tcp_wdctcp_ssthresh(struct sock *sk)
 {
-	const struct tcp_wdctcp *ca = inet_csk_ca(sk);
+	struct tcp_wdctcp *ca = inet_csk_ca(sk);
 	struct tcp_sock *tp = tcp_sk(sk);
 
+	ca->loss_cwnd = tp->snd_cwnd;
 	return max(tp->snd_cwnd - ((tp->snd_cwnd * ca->dctcp_alpha) >> 11U), 2U);
 }
 
@@ -342,6 +344,13 @@ static void tcp_wdctcp_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 	tcp_wdctcp_cong_avoid_ai(sk, tp->snd_cwnd, acked);
 }
 
+static u32 tcp_wdctcp_undo_cwnd(struct sock *sk)
+{
+	const struct tcp_wdctcp *ca = inet_csk_ca(sk);
+
+	return max(tcp_sk(sk)->snd_cwnd, ca->loss_cwnd);
+}
+
 static struct tcp_congestion_ops tcp_wdctcp __read_mostly = {
 	.init		= tcp_wdctcp_init,
 	.release	= tcp_wdctcp_release,
@@ -349,6 +358,7 @@ static struct tcp_congestion_ops tcp_wdctcp __read_mostly = {
 	.cwnd_event	= tcp_wdctcp_cwnd_event,
 	.ssthresh	= tcp_wdctcp_ssthresh,
 	.cong_avoid	= tcp_wdctcp_cong_avoid,
+	.undo_cwnd	= tcp_wdctcp_undo_cwnd,
 	.set_state	= tcp_wdctcp_state,
 	.get_info	= tcp_wdctcp_get_info,
 	.flags		= TCP_CONG_NEEDS_ECN,
@@ -360,6 +370,7 @@ static struct tcp_congestion_ops tcp_wdctcp __read_mostly = {
 static struct tcp_congestion_ops wdctcp_reno __read_mostly = {
 	.ssthresh	= tcp_reno_ssthresh,
 	.cong_avoid	= tcp_reno_cong_avoid,
+	.undo_cwnd	= tcp_wdctcp_undo_cwnd,
 	.get_info	= tcp_wdctcp_get_info,
 
 	.owner		= THIS_MODULE,

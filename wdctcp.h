@@ -28,6 +28,7 @@ struct tcp_wdctcp {
 	u32 next_seq;
 	u32 ce_state;
 	u32 delayed_ack_reserved;
+	u32 loss_cwnd;
 	/* pointer to wdctcp_obj containing the weight */
 	struct wdctcp_obj *obj;
 	/* counter for weighted increase */
