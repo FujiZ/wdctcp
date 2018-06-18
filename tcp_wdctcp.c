@@ -104,8 +104,10 @@ static u32 tcp_wdctcp_ssthresh(struct sock *sk)
 	struct tcp_wdctcp *ca = inet_csk_ca(sk);
 	struct tcp_sock *tp = tcp_sk(sk);
 
-	ca->loss_cwnd = tp->snd_cwnd;
-	return max(tp->snd_cwnd - ((tp->snd_cwnd * ca->dctcp_alpha) >> 11U), 2U);
+	u32 wnd = min(tp->snd_cwnd, tp->snd_wnd);
+        wnd = min(wnd, tcp_packets_in_flight(tp));
+        ca->loss_cwnd = tp->snd_cwnd;
+        return max(wnd - ((wnd * ca->dctcp_alpha) >> 11U), 2U);
 }
 
 /* Minimal DCTCP CE state machine:
@@ -360,7 +362,6 @@ static struct tcp_congestion_ops tcp_wdctcp __read_mostly = {
 	.cong_avoid	= tcp_wdctcp_cong_avoid,
 	.undo_cwnd	= tcp_wdctcp_undo_cwnd,
 	.set_state	= tcp_wdctcp_state,
-	.get_info	= tcp_wdctcp_get_info,
 	.flags		= TCP_CONG_NEEDS_ECN,
 
 	.owner		= THIS_MODULE,
@@ -370,8 +371,6 @@ static struct tcp_congestion_ops tcp_wdctcp __read_mostly = {
 static struct tcp_congestion_ops wdctcp_reno __read_mostly = {
 	.ssthresh	= tcp_reno_ssthresh,
 	.cong_avoid	= tcp_reno_cong_avoid,
-	.undo_cwnd	= tcp_wdctcp_undo_cwnd,
-	.get_info	= tcp_wdctcp_get_info,
 
 	.owner		= THIS_MODULE,
 	.name		= "wdctcp-reno",
