@@ -1,0 +1,1 @@
+cmd_/home/fuji/Projects/wdctcp/wdctcp.ko := ld -r -m elf_x86_64 -T ./scripts/module-common.lds --build-id  -o /home/fuji/Projects/wdctcp/wdctcp.ko /home/fuji/Projects/wdctcp/wdctcp.o /home/fuji/Projects/wdctcp/wdctcp.mod.o
