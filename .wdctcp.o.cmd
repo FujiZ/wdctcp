@@ -1,1 +1,0 @@
-cmd_/home/fuji/Projects/wdctcp/wdctcp.o := ld -m elf_x86_64   -r -o /home/fuji/Projects/wdctcp/wdctcp.o /home/fuji/Projects/wdctcp/main.o /home/fuji/Projects/wdctcp/tcp_wdctcp.o /home/fuji/Projects/wdctcp/wdctcp_sysfs.o 
