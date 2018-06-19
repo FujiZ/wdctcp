@@ -104,7 +104,7 @@ static u32 tcp_wdctcp_ssthresh(struct sock *sk)
 	struct tcp_wdctcp *ca = inet_csk_ca(sk);
 	struct tcp_sock *tp = tcp_sk(sk);
 
-	u32 wnd = max(min(tp->snd_cwnd, tcp_packets_in_flight(tp)), 1U);
+	u32 wnd = max(min(tp->snd_cwnd, tp->packets_out), 1U);
         ca->loss_cwnd = wnd;
         return max(wnd - ((wnd * ca->dctcp_alpha) >> 11U), 2U);
 }
