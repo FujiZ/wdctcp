@@ -104,9 +104,10 @@ static u32 tcp_wdctcp_ssthresh(struct sock *sk)
 	struct tcp_wdctcp *ca = inet_csk_ca(sk);
 	struct tcp_sock *tp = tcp_sk(sk);
 
-	u32 wnd = max(min(tp->snd_cwnd, tp->packets_out), 1U);
-        ca->loss_cwnd = wnd;
-        return max(wnd - ((wnd * ca->dctcp_alpha) >> 11U), 2U);
+	/* clear weight_acked_cnt, like in tcp_init_cwnd_reduction() */
+	ca->weight_acked_cnt = 0;
+        ca->loss_cwnd = tp->snd_cwnd;
+	return max(tp->snd_cwnd - ((tp->snd_cwnd * ca->dctcp_alpha) >> 11U), 2U);
 }
 
 /* Minimal DCTCP CE state machine:
@@ -293,6 +294,29 @@ static void tcp_wdctcp_get_info(struct sock *sk, u32 ext, struct sk_buff *skb)
 	}
 }
 
+static u32 tcp_wdctcp_slow_start(struct sock *sk, u32 acked)
+{
+	struct tcp_wdctcp *ca = inet_csk_ca(sk);
+	struct tcp_sock *tp = tcp_sk(sk);
+
+	ca->weight_acked_cnt += ca->obj->weight * acked;
+	if (ca->weight_acked_cnt >= wdctcp_precision) {
+		u32 delta = ca->weight_acked_cnt / wdctcp_precision;
+
+		u32 cwnd = min(tp->snd_cwnd + delta, tp->snd_ssthresh);
+		ca->weight_acked_cnt -= (cwnd - tp->snd_cwnd) * wdctcp_precision;
+
+		tp->snd_cwnd = min(cwnd, tp->snd_cwnd_clamp);
+	}
+	if (tp->snd_cwnd >= tp->snd_ssthresh) {
+		acked = ca->weight_acked_cnt / wdctcp_precision;
+		ca->weight_acked_cnt = 0;
+	} else {
+		acked = 0;
+	}
+	return acked;
+}
+
 /* In theory this is tp->snd_cwnd += 1 / tp->snd_cwnd (or alternative w),
  * for every packet that was ACKed.
  */
@@ -301,6 +325,9 @@ static void tcp_wdctcp_cong_avoid_ai(struct sock *sk, u32 w, u32 acked)
 	struct tcp_wdctcp *ca = inet_csk_ca(sk);
 	struct tcp_sock *tp = tcp_sk(sk);
 
+	unsigned int sqr_precision = wdctcp_precision * wdctcp_precision;
+	u32 sqr_weight = ca->obj->weight * ca->obj->weight;
+
 	/* If credits accumulated at a higher w, apply them gently now. */
 	if (tp->snd_cwnd_cnt >= w) {
 		tp->snd_cwnd_cnt = 0;
@@ -308,11 +335,11 @@ static void tcp_wdctcp_cong_avoid_ai(struct sock *sk, u32 w, u32 acked)
 	}
 
 	/* Weighted increase snd_cwnd_cnt instead of adding acked directly. */
-	ca->weight_acked_cnt += ca->obj->weight * acked;
-	if (ca->weight_acked_cnt >= wdctcp_precision) {
-		u32 delta = ca->weight_acked_cnt / wdctcp_precision;
+	ca->weight_acked_cnt += sqr_weight * acked;
+	if (ca->weight_acked_cnt >= sqr_precision) {
+		u32 delta = ca->weight_acked_cnt / sqr_precision;
 
-		ca->weight_acked_cnt -= delta * wdctcp_precision;
+		ca->weight_acked_cnt -= delta * sqr_precision;
 		tp->snd_cwnd_cnt += delta;
 	}
 
@@ -336,8 +363,8 @@ static void tcp_wdctcp_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 		return;
 
 	/* In "safe" area, increase. */
-	if (tp->snd_cwnd <= tp->snd_ssthresh) {
-		acked = tcp_slow_start(tp, acked);
+	if (tp->snd_cwnd < tp->snd_ssthresh) {
+		acked = tcp_wdctcp_slow_start(sk, acked);
 		if (!acked)
 			return;
 	}
